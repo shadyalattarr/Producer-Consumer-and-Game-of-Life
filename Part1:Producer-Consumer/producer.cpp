@@ -3,7 +3,7 @@
 #include <cstdlib> // For atof()
 #include <time.h>
 #include <ctime>
-#include <unistd.h>
+#include <unistd.h> // For getpid()
 #include <random>
 #include <sys/types.h>
 #include <sys/ipc.h>
@@ -12,6 +12,9 @@
 #include <sys/shm.h>
 #include <stdio.h>
 #include <cstring>
+#include <chrono>
+#include <map> // for key
+ 
 
 
 using namespace::std;
@@ -23,8 +26,88 @@ struct Buffer {
     size_t buffer_size;  // Store the size of the buffer
     double data[];          // Flexible array member
 };
+#include <sys/ipc.h>
+#include <sys/sem.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
 
-Buffer* createOrAttachBuffer(key_t key, size_t buffer_size, bool& is_new) {
+int create_Or_Get_Semaphore(key_t key, int buffer_size) {
+    
+    // Try to get the semaphore without creating it
+    int semid = semget(key, 3, 0666);
+    if (semid == -1) {
+        if (errno == ENOENT) {
+            // Semaphore does not exist, create it
+            printf("Semaphore does not exist, create it\n");
+            semid = semget(key, 3, IPC_CREAT | 0666);
+            if (semid == -1) {
+                perror("semget (create)");
+                return -1;
+            }
+
+            
+            // 0 - mutex
+            // 1 - empty slots
+            // 2 - full slots
+            // Initialize semaphore 0 (mutex-access on buffer) to 1 (resource available)
+            if (semctl(semid, 0, SETVAL, 1) == -1) {
+                perror("semctl failed");
+                exit(EXIT_FAILURE);
+            }
+
+            // Initialize semaphore 1 (empty slots) to buffer_size (resource available)
+            if (semctl(semid, 1, SETVAL, buffer_size) == -1) {
+                perror("semctl failed");
+                exit(EXIT_FAILURE);
+            }
+
+            // Initialize semaphore 2 (full slots) to 0 (wait)
+            if (semctl(semid, 2, SETVAL, 0) == -1) {
+                perror("semctl failed");
+                exit(EXIT_FAILURE);
+            }
+
+            printf("Semaphore created and initialized to %d with ID: %d\n", buffer_size, semid);
+        } else {
+            perror("semget");
+            return -1;
+        }
+    } else {
+        printf("Semaphore already exists with ID: %d\n", semid);
+    }
+
+    return semid;  // Return the semaphore ID
+}
+
+int get_Commodity_Key(const char *commodity) {
+    // Map of commodities to unique keys
+    static const map<string, int> commodityKeyMap = {
+        {"GOLD", 1},
+        {"SILVER", 2},
+        {"CRUDEOIL", 3},
+        {"NATURALGAS", 4},
+        {"ALUMINIUM", 5},
+        {"COPPER", 6},
+        {"NICKEL", 7},
+        {"LEAD", 8},
+        {"ZINC", 9},
+        {"MENTHAOIL", 10},
+        {"COTTON", 11}
+    };
+
+    // search for the pair you want
+    // com_key is an iterator that pts to pair
+    auto com_key = commodityKeyMap.find(commodity); // returns pair with the commodity
+    if (com_key != commodityKeyMap.end()) {
+        return com_key->second; // Return the associated key
+    }
+
+    return -1; // Invalid commodity
+}
+
+
+Buffer* create_Or_Attach_Buffer(key_t key, size_t buffer_size, bool& is_new) {
     size_t total_size = sizeof(Buffer) + sizeof(double) * buffer_size;
 
     // Try to create the shared memory segment
@@ -34,23 +117,24 @@ Buffer* createOrAttachBuffer(key_t key, size_t buffer_size, bool& is_new) {
 
 
     if (shm_id < 0) {
-        // If it already exists, attach to it
+        // if already exists, attach to it
         shm_id = shmget(key, total_size, 0666);
         printf("shmid: %d\n",shm_id);
         if (shm_id < 0) {
             printf("ERROR?\n");
-            std::cerr << "Failed to create or attach to shared memory!" << std::endl;
+            cerr << "Failed to create or attach to shared memory!" << endl;
             exit(1);
         }
         is_new = false; // Buffer already exists
     } else {
+        printf("shmid: %d\n",shm_id);
         is_new = true; // This process created the buffer
     }
 
-    // Attach to the shared memory
+    // Attach to shared memory
     Buffer* buffer = (Buffer*)shmat(shm_id, nullptr, 0);
     if (buffer == (void*)-1) {
-        std::cerr << "Failed to attach to shared memory!" << std::endl;
+        cerr << "Failed to attach to shared memory!" << endl;
         exit(1);
     }
 
@@ -131,18 +215,14 @@ int main(int argc, char *argv[]) {
     // shared memory creation
     // just creating a unique key
 
-    int key;
-    if (strcmp(commodity, "GOLD") == 0) {
-        key = 1;  // Project ID for GOLD
-    } else if (strcmp(commodity, "ALUM") == 0) {
-        key =  2;  // Project ID for ALUM
-    }
+    int key = get_Commodity_Key(commodity);
+    printf("FLIPPING KEY: %d\n",key);
     key_t shm_key = ftok("/tmp", key);
     bool is_new = false;
     
     // int shmid = shmget(shm_key, sizeof(Buffer) + sizeof(double) * buffer_size, IPC_CREAT | 0666);
     // if (shmid == -1) {
-    //     std::cerr << "Shared memory creation failed!" << std::endl;
+    //     cerr << "Shared memory creation failed!" << endl;
     //     return 1;
     // }
 
@@ -155,35 +235,43 @@ int main(int argc, char *argv[]) {
     
     // creating unique semkey -> 
     // to access semaphore across different processes and such
-    key_t SEM_KEY = ftok("semkey", 55);
+    // need a semaphore for each PRODUCT?
+    key_t SEM_KEY = ftok("/tmp", 55);
     // Create a semaphore set with 3 semaphores
-    int semid = semget(SEM_KEY, 3, IPC_CREAT | 0666);
+    int semid = create_Or_Get_Semaphore(SEM_KEY,(int)buffer_size); //semget(SEM_KEY, 3, IPC_CREAT | 0666);
     if (semid == -1) {
         perror("semget failed");
         exit(EXIT_FAILURE);
     }
 
-    // Initialize semaphore 0 (mutex-access on buffer) to 1 (resource available)
-    if (semctl(semid, 0, SETVAL, 1) == -1) {
-        perror("semctl failed");
-        exit(EXIT_FAILURE);
-    }
+    // // 0 - mutex
+    // // 1 - empty slots
+    // // 2 - full slots
+    // // Initialize semaphore 0 (mutex-access on buffer) to 1 (resource available)
+    // if (semctl(semid, 0, SETVAL, 1) == -1) {
+    //     perror("semctl failed");
+    //     exit(EXIT_FAILURE);
+    // }
 
-    // Initialize semaphore 1 (empty slots) to buffer_size (resource available)
-    if (semctl(semid, 1, SETVAL, buffer_size) == -1) {
-        perror("semctl failed");
-        exit(EXIT_FAILURE);
-    }
+    // // Initialize semaphore 1 (empty slots) to buffer_size (resource available)
+    // if (semctl(semid, 1, SETVAL, buffer_size) == -1) {
+    //     perror("semctl failed");
+    //     exit(EXIT_FAILURE);
+    // }
 
-    // Initialize semaphore 2 (full slots) to 0 (wait)
-    if (semctl(semid, 2, SETVAL, 0) == -1) {
-        perror("semctl failed");
-        exit(EXIT_FAILURE);
-    }
+    // // Initialize semaphore 2 (full slots) to 0 (wait)
+    // if (semctl(semid, 2, SETVAL, 0) == -1) {
+    //     perror("semctl failed");
+    //     exit(EXIT_FAILURE);
+    // }
 
     // ------------------------
-
-    default_random_engine generator;
+    // Seed the generator with a unique value
+    unsigned seed = chrono::system_clock::now().time_since_epoch().count() + getpid();  // seed is time + pid
+    printf("Seed: %d\n",seed);
+    printf("PID: %d\n",getpid());
+    
+    default_random_engine generator(seed); // to ensure each process generates different numbers -> not default seed
     normal_distribution<double> distribution(price_mean,price_sd);
     // first let's try and produce into terminal instead into a prod log file
     while(true)
@@ -196,20 +284,20 @@ int main(int argc, char *argv[]) {
         print_time();
         printf("%s: trying to get mutex on shared buffer\n",commodity);
         //semWait(e) -> mt spot?
-        //sem_Wait(semid,1);
+        sem_Wait(semid,1);
         // Attach the shared memory to the process
-        Buffer* buffer = createOrAttachBuffer(shm_key,buffer_size,is_new);
+        Buffer* buffer = create_Or_Attach_Buffer(shm_key,buffer_size,is_new);
         if (is_new) {
-            std::cout << "Buffer created and initialized." << std::endl;
+            cout << "Buffer created and initialized." << endl;
         } else {
-            std::cout << "Buffer attached to existing shared memory." << std::endl;
+            cout << "Buffer attached to existing shared memory." << endl;
         }
 
 
         print_time();
         printf("%s: placing %f on shared buffer\n",commodity,price_gen);
         // semWait(s) -> mutex
-        //sem_Wait(semid,0);
+        sem_Wait(semid,0);
 
         // append
         // Initialize or modify the shared buffer (only one process or thread at a time for safety)
@@ -217,8 +305,8 @@ int main(int argc, char *argv[]) {
         
         printf("buffersize = %d\n",(int)buffer->buffer_size);
         pid_t pid = getppid(); // Get the process ID
-        std::cout << "Producer " << pid << " produced: " 
-                  << buffer->data[buffer->write_index] << std::endl;
+        cout << "Producer " << pid << " produced: " 
+                  << buffer->data[buffer->write_index] << endl;
         
         // assume we sure there is an empty spot
         buffer->write_index = (buffer->write_index + 1) % buffer->buffer_size;
@@ -226,20 +314,20 @@ int main(int argc, char *argv[]) {
         
 
         // Print buffer state
-        std::cout << "Buffer state: ";
+        cout << "Buffer state: ";
         for (int j = 0; j < (int)buffer->buffer_size; ++j) {
-            std::cout << buffer->data[j] << " ";
+            cout << buffer->data[j] << " ";
         }
-        std::cout << std::endl;
+        cout << endl;
 
         // Detach from shared memory
         shmdt(buffer);
 
         // semSignal(s) -> mutex
-        //sem_Signal(semid,0);
+        sem_Signal(semid,0);
 
         // smeSignal(n) -> a product is ready
-        //sem_Signal(semid,2);
+        sem_Signal(semid,2);
         
         
         print_time();
