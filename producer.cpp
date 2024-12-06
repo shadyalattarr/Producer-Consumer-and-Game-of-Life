@@ -8,10 +8,63 @@
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #include <stdio.h>
 #include <cstring>
 
+
 using namespace::std;
+
+//vector in buffer wont work cuz allocate din heap
+struct Buffer {
+    int write_index;
+    int read_index;
+    size_t buffer_size;  // Store the size of the buffer
+    double data[];          // Flexible array member
+};
+
+Buffer* createOrAttachBuffer(key_t key, size_t buffer_size, bool& is_new) {
+    size_t total_size = sizeof(Buffer) + sizeof(double) * buffer_size;
+
+    // Try to create the shared memory segment
+    int shm_id = shmget(key, total_size, IPC_CREAT | IPC_EXCL | 0666);
+    // Remove the shared memory segment 
+    // IPC_EXCL make shmget fail if shared memory already exists, and return -ve to shmid
+
+
+    if (shm_id < 0) {
+        // If it already exists, attach to it
+        shm_id = shmget(key, total_size, 0666);
+        printf("shmid: %d\n",shm_id);
+        if (shm_id < 0) {
+            printf("ERROR?\n");
+            std::cerr << "Failed to create or attach to shared memory!" << std::endl;
+            exit(1);
+        }
+        is_new = false; // Buffer already exists
+    } else {
+        is_new = true; // This process created the buffer
+    }
+
+    // Attach to the shared memory
+    Buffer* buffer = (Buffer*)shmat(shm_id, nullptr, 0);
+    if (buffer == (void*)-1) {
+        std::cerr << "Failed to attach to shared memory!" << std::endl;
+        exit(1);
+    }
+
+    // Initialize only if this process created the buffer
+    if (is_new) {
+        buffer->write_index = 0;
+        buffer->read_index = 0;
+        buffer->buffer_size = buffer_size;
+        memset(buffer->data, 0, sizeof(double) * buffer_size);
+    }
+
+    return buffer;
+}
+
 
 void print_time()
 {
@@ -63,22 +116,46 @@ int main(int argc, char *argv[]) {
     
     double price_mean = atof(argv[2]);         // Convert second argument to double
     double price_sd = atof(argv[3]);           // Convert third argument to double
-    int wait_interval = std::atoi(argv[4]);     // Convert fourth argument to int
-    int buffer_size = std::atoi(argv[5]);  // Convert fifth argument to int
+    int wait_interval = atoi(argv[4]);     // Convert fourth argument to int
+    int buffer_size = atoi(argv[5]);  // Convert fifth argument to int
 
     // Output the parsed values
-    //cout << "argv[0] :" << argv[0] << "\n";
-    cout << "Commodity: " << commodity << "\n";
-    cout << "Price mean: $ " << price_mean << "\n";
-    cout << "Price standard deviation: $ " << price_sd << "\n";
-    cout << "Interval: " << wait_interval << " ms\n";
-    cout << "Buffer size: " << buffer_size << "\n";
+    // cout << "argv[0] :" << argv[0] << "\n";
+    // cout << "Commodity: " << commodity << "\n";
+    // cout << "Price mean: $ " << price_mean << "\n";
+    // cout << "Price standard deviation: $ " << price_sd << "\n";
+    // cout << "Interval: " << wait_interval << " ms\n";
+    // cout << "Buffer size: " << buffer_size << "\n";
     
+    // ---------------------
+    // shared memory creation
+    // just creating a unique key
+
+    int key;
+    if (strcmp(commodity, "GOLD") == 0) {
+        key = 1;  // Project ID for GOLD
+    } else if (strcmp(commodity, "ALUM") == 0) {
+        key =  2;  // Project ID for ALUM
+    }
+    key_t shm_key = ftok("/tmp", key);
+    bool is_new = false;
+    
+    // int shmid = shmget(shm_key, sizeof(Buffer) + sizeof(double) * buffer_size, IPC_CREAT | 0666);
+    // if (shmid == -1) {
+    //     std::cerr << "Shared memory creation failed!" << std::endl;
+    //     return 1;
+    // }
+
+    
+
+    
+    // ----------------------
+    // ----------------------
     // creating the semaphore set for ONE PRODUCT--- for now iog
     
     // creating unique semkey -> 
     // to access semaphore across different processes and such
-    key_t SEM_KEY = ftok("shmfile", 65);
+    key_t SEM_KEY = ftok("semkey", 55);
     // Create a semaphore set with 3 semaphores
     int semid = semget(SEM_KEY, 3, IPC_CREAT | 0666);
     if (semid == -1) {
@@ -104,6 +181,7 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    // ------------------------
 
     default_random_engine generator;
     normal_distribution<double> distribution(price_mean,price_sd);
@@ -117,8 +195,16 @@ int main(int argc, char *argv[]) {
 
         print_time();
         printf("%s: trying to get mutex on shared buffer\n",commodity);
-        // semWait(e) -> mt spot?
+        //semWait(e) -> mt spot?
         //sem_Wait(semid,1);
+        // Attach the shared memory to the process
+        Buffer* buffer = createOrAttachBuffer(shm_key,buffer_size,is_new);
+        if (is_new) {
+            std::cout << "Buffer created and initialized." << std::endl;
+        } else {
+            std::cout << "Buffer attached to existing shared memory." << std::endl;
+        }
+
 
         print_time();
         printf("%s: placing %f on shared buffer\n",commodity,price_gen);
@@ -126,6 +212,28 @@ int main(int argc, char *argv[]) {
         //sem_Wait(semid,0);
 
         // append
+        // Initialize or modify the shared buffer (only one process or thread at a time for safety)
+        buffer->data[buffer->write_index] = price_gen;
+        
+        printf("buffersize = %d\n",(int)buffer->buffer_size);
+        pid_t pid = getppid(); // Get the process ID
+        std::cout << "Producer " << pid << " produced: " 
+                  << buffer->data[buffer->write_index] << std::endl;
+        
+        // assume we sure there is an empty spot
+        buffer->write_index = (buffer->write_index + 1) % buffer->buffer_size;
+        
+        
+
+        // Print buffer state
+        std::cout << "Buffer state: ";
+        for (int j = 0; j < (int)buffer->buffer_size; ++j) {
+            std::cout << buffer->data[j] << " ";
+        }
+        std::cout << std::endl;
+
+        // Detach from shared memory
+        shmdt(buffer);
 
         // semSignal(s) -> mutex
         //sem_Signal(semid,0);
