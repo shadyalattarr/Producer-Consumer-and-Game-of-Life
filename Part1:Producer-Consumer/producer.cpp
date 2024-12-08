@@ -14,10 +14,13 @@
 #include <cstring>
 #include <chrono>
 #include <map> // for key
- 
-
-
 using namespace::std;
+
+#include <sys/ipc.h>
+#include <sys/sem.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 //vector in buffer wont work cuz allocate din heap
 struct Buffer {
@@ -26,11 +29,6 @@ struct Buffer {
     size_t buffer_size;  // Store the size of the buffer
     double data[];          // Flexible array member
 };
-#include <sys/ipc.h>
-#include <sys/sem.h>
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 int create_Or_Get_Semaphore(key_t key, int buffer_size) {
     
