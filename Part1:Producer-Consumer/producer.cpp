@@ -215,9 +215,9 @@ int main(int argc, char *argv[]) {
     // shared memory creation
     // just creating a unique key
 
-    int key = get_Commodity_Key(commodity);
-    printf("FLIPPING KEY: %d\n",key);
-    key_t shm_key = ftok("/tmp", key);
+    int product_key = get_Commodity_Key(commodity);
+    printf("PRODUCT_KEY: %d\n",product_key);
+    key_t shm_key = ftok("/tmp", product_key);
     bool is_new = false;
     
     // int shmid = shmget(shm_key, sizeof(Buffer) + sizeof(double) * buffer_size, IPC_CREAT | 0666);
@@ -236,7 +236,8 @@ int main(int argc, char *argv[]) {
     // creating unique semkey -> 
     // to access semaphore across different processes and such
     // need a semaphore for each PRODUCT?
-    key_t SEM_KEY = ftok("/tmp", 55);
+
+    key_t SEM_KEY = ftok("/tmp", product_key);
     // Create a semaphore set with 3 semaphores
     int semid = create_Or_Get_Semaphore(SEM_KEY,(int)buffer_size); //semget(SEM_KEY, 3, IPC_CREAT | 0666);
     if (semid == -1) {
