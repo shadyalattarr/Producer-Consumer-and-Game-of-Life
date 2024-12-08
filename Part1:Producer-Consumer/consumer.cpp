@@ -14,6 +14,8 @@
 #include <cstring>
 #include <chrono>
 #include <map> // for key
+#include <iomanip> // colors?
+#include <vector>
  
 using namespace::std;
 
@@ -25,17 +27,42 @@ struct Buffer {
     double data[];          // Flexible array member
 };
 
-
-struct avg_buffer{
+struct Avg_Buffer{
     double data[5];
     int write_index;
-    avg_buffer() {
+    int avg_buffer_size;
+    Avg_Buffer() {
         for (int i = 0; i < 5; ++i) {
             data[i] = 0;
         }
         write_index = 0;
+        avg_buffer_size = 5;
     }
 };
+
+void printTable(const vector<string>& commodities, 
+                const vector<double>& prices, 
+                const vector<double>& avgPrices) {
+    // Print table header
+    cout << "+-----------------+-------------+-------------+" << endl;
+    cout << "|    Currency     |    Price    |  AvgPrice   |" << endl;
+    cout << "+-----------------+-------------+-------------+" << endl;
+
+    // Print table rows
+    for (size_t i = 0; i < commodities.size(); ++i) {
+        // Format prices with green/red arrows based on price comparison
+        string priceIndicator = (prices[i] > avgPrices[i]) ? "\033[32m↑\033[0m" : "\033[31m↓\033[0m";
+        string avgPriceIndicator = (prices[i] > avgPrices[i]) ? "\033[32m↑\033[0m" : "\033[31m↓\033[0m";
+
+        cout << "| " << setw(15) << commodities[i] << " | "
+                  << setw(9) << fixed << setprecision(2) << prices[i] << priceIndicator << " | "
+                  << setw(9) << fixed << setprecision(2) << avgPrices[i] << avgPriceIndicator << " |"
+                  << endl;
+    }
+
+    // Print table footer
+    cout << "+-----------------+-------------+-------------+" << endl;
+}
 
 int create_Or_Get_Semaphore(key_t key, int buffer_size) {
     
@@ -154,8 +181,6 @@ Buffer* create_Or_Attach_Buffer(key_t key, size_t buffer_size, bool& is_new) {
     return buffer;
 }
 
-
-
 // Function to lock semaphore 
 void sem_Wait(int semid,short unsigned int sem_num) {
     struct sembuf sb = {sem_num, -1, 0}; // Decrement semaphore sem_num
@@ -174,6 +199,26 @@ void sem_Signal(int semid,short unsigned int sem_num) {
     }
 }
 
+double get_avg_last_5(Avg_Buffer avg_buffer){
+    double sum = 0.0;
+    int index;
+    for (int i = 1;i<=avg_buffer.avg_buffer_size;i++){
+        index = (avg_buffer.write_index-i)%5;
+        if (index < 0) {
+            index = 5 + index; // Translate -1 to 4, -2 to 3, etc.
+        }
+	    sum+= avg_buffer.data[index];
+
+    }
+        
+    printf("sum = %f\n",sum);
+    return sum / avg_buffer.avg_buffer_size;
+}
+
+void insert_avg_buffer(Avg_Buffer * avg_buffer,double element){
+    avg_buffer->data[avg_buffer->write_index] = element;
+    avg_buffer->write_index =(avg_buffer->write_index+ 1)%5;
+}
 
 int main(int argc, char* argv[]) {
     if (argc != 2) {
@@ -185,6 +230,44 @@ int main(int argc, char* argv[]) {
 
     cout << "Buffer size: " << buffer_size << "\n";
 
+    // Avg_Buffer dabuff;
+    // insert_avg_buffer(&dabuff,1);
+    // insert_avg_buffer(&dabuff,2);
+    // insert_avg_buffer(&dabuff,3);
+    // insert_avg_buffer(&dabuff,4);
+    // insert_avg_buffer(&dabuff,5);
+    // insert_avg_buffer(&dabuff,6);
+
+    // // Print dabuffer state
+    // cout << "daBuffer state: ";
+    // for (int j = 0; j < dabuff.avg_buffer_size; ++j) {
+    //     cout << dabuff.data[j] << " ";
+    // }
+    // cout << endl;
+
+
+    // //printf("(-1) mod 5 = %d\n",(2-3)%5);
+    // printf("write_index= %d\n",dabuff.write_index);
+    // //printf("dabuff.data[(dabuff.write_index-3)%%5] = %f\n",dabuff.data[(dabuff.write_index-8)%5]);
+    // printf("%f\n",get_avg_last_5(dabuff));
+
+
+    
+    // Example commodities, prices, and average prices
+    vector<string> commodities = {"GOLD","SILVER","CRUDEOIL","NATURALGAS","ALUMINIUM",
+                                "COPPER","NICKEL","LEAD","ZINC","MENTHAOIL","COTTON"};
+    vector<double> prices   =  {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    vector<double> avgPrices = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+
+    
+    
+
+
+
+
+    // Print the table
+    printTable(commodities, prices, avgPrices);
 
     return 0;
 }
