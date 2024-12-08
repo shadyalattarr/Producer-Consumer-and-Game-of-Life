@@ -220,6 +220,28 @@ void insert_avg_buffer(Avg_Buffer * avg_buffer,double element){
     avg_buffer->write_index =(avg_buffer->write_index+ 1)%5;
 }
 
+double take(Buffer* buffer){
+    double price_taken = buffer->data[buffer->read_index];
+    
+    pid_t pid = getppid(); // Get the process ID
+    cout << "Consumer " << pid << " consumed: " 
+            << buffer->data[buffer->read_index] << endl; 
+    //just to show in buffer state
+    buffer->data[buffer->read_index] = 0.0;
+
+    // incrememnt buffer->read_index
+    buffer->read_index = (buffer->read_index+1) % buffer->buffer_size;
+
+    // Print buffer state
+    cout << "Buffer state: ";
+    for (int j = 0; j < (int)buffer->buffer_size; ++j) {
+        cout << buffer->data[j] << " ";
+    }
+    cout << endl;
+
+    return price_taken;
+}
+
 int main(int argc, char* argv[]) {
     if (argc != 2) {
         cout << "Usage: " << argv[0] << " <buffer_size>\n";
@@ -259,15 +281,60 @@ int main(int argc, char* argv[]) {
     vector<double> prices   =  {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     vector<double> avgPrices = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
-
     
-    
+    int product_key = get_Commodity_Key("GOLD"); // for now do gold only
+    printf("PRODUCT_KEY: %d\n",product_key);
+    key_t shm_key = ftok("/tmp", product_key);
+    bool is_new = false;
 
+    key_t SEM_KEY = ftok("/tmp", product_key);
+    // Create a semaphore set with 3 semaphores
+    int semid = create_Or_Get_Semaphore(SEM_KEY,(int)buffer_size); //semget(SEM_KEY, 3, IPC_CREAT | 0666);
+    if (semid == -1) {
+        perror("semget failed");
+        exit(EXIT_FAILURE);
+    }
+
+    double price_taken;
+    // 0 - mutex       - s
+    // 1 - empty slots - e
+    // 2 - full slots  - n
+    while(true){
+        //semWait(n) - is there a product ready for me?
+        printf("is there a product ready for me?\n");
+        sem_Wait(semid,2);
+
+        //semWait(s)  -- sync to read buffer
+        printf("sync to read buffer\n");
+        sem_Wait(semid,0);
+
+        //take()
+        // Attach the shared memory to the process
+        Buffer* buffer = create_Or_Attach_Buffer(shm_key,buffer_size,is_new);
+        if (is_new) {
+            cout << "Buffer created and initialized." << endl;
+        } else {
+            cout << "Buffer attached to existing shared memory." << endl;
+        }
+        price_taken = take(buffer);
+        printf("PRICE TAKEN: %f\n",price_taken);
+
+
+
+
+        //semSIgnal(s) - done with critical section
+        sem_Signal(semid,0);
+
+        //semSignal(e) - product taken so mtspot available
+        sem_Signal(semid,1);
+
+        //consume
+    }
 
 
 
     // Print the table
-    printTable(commodities, prices, avgPrices);
+    //printTable(commodities, prices, avgPrices);
 
     return 0;
 }

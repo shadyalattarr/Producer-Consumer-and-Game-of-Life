@@ -30,6 +30,28 @@ struct Buffer {
     double data[];          // Flexible array member
 };
 
+void append(Buffer* buffer,double price_gen){
+    // Initialize or modify the shared buffer (only one process or thread at a time for safety)
+    buffer->data[buffer->write_index] = price_gen;
+        
+    printf("buffersize = %d\n",(int)buffer->buffer_size);
+    pid_t pid = getppid(); // Get the process ID
+    cout << "Producer " << pid << " produced: " 
+            << buffer->data[buffer->write_index] << endl;
+        
+    // assume we sure there is an empty spot
+    buffer->write_index = (buffer->write_index + 1) % buffer->buffer_size;
+        
+        
+
+    // Print buffer state
+    cout << "Buffer state: ";
+    for (int j = 0; j < (int)buffer->buffer_size; ++j) {
+        cout << buffer->data[j] << " ";
+    }
+    cout << endl;
+}
+
 int create_Or_Get_Semaphore(key_t key, int buffer_size) {
     
     // Try to get the semaphore without creating it
@@ -299,25 +321,7 @@ int main(int argc, char *argv[]) {
         sem_Wait(semid,0);
 
         // append
-        // Initialize or modify the shared buffer (only one process or thread at a time for safety)
-        buffer->data[buffer->write_index] = price_gen;
-        
-        printf("buffersize = %d\n",(int)buffer->buffer_size);
-        pid_t pid = getppid(); // Get the process ID
-        cout << "Producer " << pid << " produced: " 
-                  << buffer->data[buffer->write_index] << endl;
-        
-        // assume we sure there is an empty spot
-        buffer->write_index = (buffer->write_index + 1) % buffer->buffer_size;
-        
-        
-
-        // Print buffer state
-        cout << "Buffer state: ";
-        for (int j = 0; j < (int)buffer->buffer_size; ++j) {
-            cout << buffer->data[j] << " ";
-        }
-        cout << endl;
+        append(buffer,price_gen); // note buffer here is a pointer to buffer
 
         // Detach from shared memory
         shmdt(buffer);
