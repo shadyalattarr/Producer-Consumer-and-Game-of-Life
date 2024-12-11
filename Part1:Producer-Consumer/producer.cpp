@@ -21,23 +21,33 @@ using namespace::std;
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
+struct Commodity{
+    char product_name[11];
+    double price;
+};
 //vector in buffer wont work cuz allocate din heap
 struct Buffer {
     int write_index;
     int read_index;
     size_t buffer_size;  // Store the size of the buffer
-    double data[];          // Flexible array member
+    Commodity data[];          // Flexible array member
 };
 
-void append(Buffer* buffer,double price_gen){
+
+void append(Buffer* buffer,double price_gen, char* product_name){
     // Initialize or modify the shared buffer (only one process or thread at a time for safety)
-    buffer->data[buffer->write_index] = price_gen;
-        
+    buffer->data[buffer->write_index].price = price_gen;
+    strncpy(buffer->data[buffer->write_index].product_name,product_name,11);
+    
+    
     printf("buffersize = %d\n",(int)buffer->buffer_size);
     pid_t pid = getppid(); // Get the process ID
     cout << "Producer " << pid << " produced: " 
-            << buffer->data[buffer->write_index] << endl;
+            << buffer->data[buffer->write_index].product_name << " of price "
+            << buffer->data[buffer->write_index].price << endl;
         
     // assume we sure there is an empty spot
     buffer->write_index = (buffer->write_index + 1) % buffer->buffer_size;
@@ -47,7 +57,7 @@ void append(Buffer* buffer,double price_gen){
     // Print buffer state
     cout << "Buffer state: ";
     for (int j = 0; j < (int)buffer->buffer_size; ++j) {
-        cout << buffer->data[j] << " ";
+        cout << buffer->data[j].product_name << " " << buffer->data[j].price << " ";
     }
     cout << endl;
 }
@@ -128,26 +138,20 @@ int get_Commodity_Key(const char *commodity) {
 
 
 Buffer* create_Or_Attach_Buffer(key_t key, size_t buffer_size, bool& is_new) {
-    size_t total_size = sizeof(Buffer) + sizeof(double) * buffer_size;
+    // Calculate the total size required for the Buffer, including all commodities
+    size_t total_size = sizeof(Buffer) + sizeof(Commodity) * buffer_size;
 
     // Try to create the shared memory segment
     int shm_id = shmget(key, total_size, IPC_CREAT | IPC_EXCL | 0666);
-    // Remove the shared memory segment 
-    // IPC_EXCL make shmget fail if shared memory already exists, and return -ve to shmid
-
-
     if (shm_id < 0) {
-        // if already exists, attach to it
+        // If already exists, attach to it
         shm_id = shmget(key, total_size, 0666);
-        printf("shmid: %d\n",shm_id);
         if (shm_id < 0) {
-            printf("ERROR?\n");
             cerr << "Failed to create or attach to shared memory!" << endl;
             exit(1);
         }
         is_new = false; // Buffer already exists
     } else {
-        printf("shmid: %d\n",shm_id);
         is_new = true; // This process created the buffer
     }
 
@@ -163,7 +167,11 @@ Buffer* create_Or_Attach_Buffer(key_t key, size_t buffer_size, bool& is_new) {
         buffer->write_index = 0;
         buffer->read_index = 0;
         buffer->buffer_size = buffer_size;
-        memset(buffer->data, 0, sizeof(double) * buffer_size);
+        // Initialize each commodity's product_name and price to default values
+        for (size_t i = 0; i < buffer_size; ++i) {
+            buffer->data[i].product_name[0] = '\0'; // Empty string
+            buffer->data[i].price = 0.0;           // Default price
+        }
     }
 
     return buffer;
@@ -235,9 +243,9 @@ int main(int argc, char *argv[]) {
     // shared memory creation
     // just creating a unique key
 
-    int product_key = get_Commodity_Key(commodity);
-    printf("PRODUCT_KEY: %d\n",product_key);
-    key_t shm_key = ftok("/tmp", product_key);
+    // int product_key = get_Commodity_Key(commodity);
+    // printf("PRODUCT_KEY: %d\n",product_key);
+    key_t shm_key = ftok("/tmp", 20);
     bool is_new = false;
     
     // int shmid = shmget(shm_key, sizeof(Buffer) + sizeof(double) * buffer_size, IPC_CREAT | 0666);
@@ -257,7 +265,7 @@ int main(int argc, char *argv[]) {
     // to access semaphore across different processes and such
     // need a semaphore for each PRODUCT?
 
-    key_t SEM_KEY = ftok("/tmp", product_key);
+    key_t SEM_KEY = ftok("/tmp", 22);
     // Create a semaphore set with 3 semaphores
     int semid = create_Or_Get_Semaphore(SEM_KEY,(int)buffer_size); //semget(SEM_KEY, 3, IPC_CREAT | 0666);
     if (semid == -1) {
@@ -295,15 +303,17 @@ int main(int argc, char *argv[]) {
     default_random_engine generator(seed); // to ensure each process generates different numbers -> not default seed
     normal_distribution<double> distribution(price_mean,price_sd);
     // first let's try and produce into terminal instead into a prod log file
+    int com_key;
     while(true)
     {
         print_time();
         double price_gen = distribution(generator);
-        printf("%s: generating a new value %f\n", commodity, price_gen);
+
+        printf("\033[31m%s: generating a new value %f\033[0m\n", commodity, price_gen);
         // produce
 
         print_time();
-        printf("%s: trying to get mutex on shared buffer\n",commodity);
+        printf("\033[31m%s: trying to get mutex on shared buffer\033[0m\n",commodity);
         //semWait(e) -> mt spot?
         sem_Wait(semid,1);
         // Attach the shared memory to the process
@@ -316,13 +326,18 @@ int main(int argc, char *argv[]) {
 
 
         print_time();
-        printf("%s: placing %f on shared buffer\n",commodity,price_gen);
+        printf("\033[31m%s: placing %f on shared buffer\033[0m\n",commodity,price_gen);
         // semWait(s) -> mutex
+        cout<<"fee eiih\n";
         sem_Wait(semid,0);
+        cout << "2oli fee eih\n";
 
         // append
-        append(buffer,price_gen); // note buffer here is a pointer to buffer
-
+        cout <<"before going com_key" << commodity << "\n";
+        com_key = get_Commodity_Key(commodity);
+        cout << "com_key we clearrrrrr = " << com_key << "\n";
+        append(buffer,price_gen,commodity); // note buffer here is a pointer to buffer
+        cout<<"dount we gget here\n";
         // Detach from shared memory
         shmdt(buffer);
 
@@ -334,7 +349,8 @@ int main(int argc, char *argv[]) {
         
         
         print_time();
-        printf("%s: sleeping for %d ms\n", commodity,wait_interval); 
+        printf("\033[31m%s: sleeping for %d ms\033[0m\n", commodity,wait_interval); 
+        printf("\n\n");
         
         usleep(wait_interval * 1000); // usleep uses micro and we got milli
     }
