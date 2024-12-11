@@ -237,7 +237,7 @@ void take(Buffer* buffer,double* price, string * product_name){
     buffer->data[buffer->read_index].price = 0.0;
     strncpy(buffer->data[buffer->read_index].product_name,"\0",11);
     
-
+    //asd
     // incrememnt buffer->read_index
     buffer->read_index = (buffer->read_index+1) % buffer->buffer_size;
 
