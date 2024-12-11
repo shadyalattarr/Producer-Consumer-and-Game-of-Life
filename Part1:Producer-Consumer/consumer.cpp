@@ -20,11 +20,16 @@
 using namespace::std;
 
 //vector in buffer wont work cuz allocate din heap
+struct Commodity{
+    char product_name[11];
+    double price;
+};
+//vector in buffer wont work cuz allocate din heap
 struct Buffer {
     int write_index;
     int read_index;
     size_t buffer_size;  // Store the size of the buffer
-    double data[];          // Flexible array member
+    Commodity data[];          // Flexible array member
 };
 
 struct Avg_Buffer{
@@ -140,26 +145,20 @@ int get_Commodity_Key(const char *commodity) {
 
 
 Buffer* create_Or_Attach_Buffer(key_t key, size_t buffer_size, bool& is_new) {
-    size_t total_size = sizeof(Buffer) + sizeof(double) * buffer_size;
+    // Calculate the total size required for the Buffer, including all commodities
+    size_t total_size = sizeof(Buffer) + sizeof(Commodity) * buffer_size;
 
     // Try to create the shared memory segment
     int shm_id = shmget(key, total_size, IPC_CREAT | IPC_EXCL | 0666);
-    // Remove the shared memory segment 
-    // IPC_EXCL make shmget fail if shared memory already exists, and return -ve to shmid
-
-
     if (shm_id < 0) {
-        // if already exists, attach to it
+        // If already exists, attach to it
         shm_id = shmget(key, total_size, 0666);
-        printf("shmid: %d\n",shm_id);
         if (shm_id < 0) {
-            printf("ERROR?\n");
             cerr << "Failed to create or attach to shared memory!" << endl;
             exit(1);
         }
         is_new = false; // Buffer already exists
     } else {
-        printf("shmid: %d\n",shm_id);
         is_new = true; // This process created the buffer
     }
 
@@ -175,7 +174,11 @@ Buffer* create_Or_Attach_Buffer(key_t key, size_t buffer_size, bool& is_new) {
         buffer->write_index = 0;
         buffer->read_index = 0;
         buffer->buffer_size = buffer_size;
-        memset(buffer->data, 0, sizeof(double) * buffer_size);
+        // Initialize each commodity's product_name and price to default values
+        for (size_t i = 0; i < buffer_size; ++i) {
+            buffer->data[i].product_name[0] = '\0'; // Empty string
+            buffer->data[i].price = 0.0;           // Default price
+        }
     }
 
     return buffer;
@@ -220,14 +223,20 @@ void insert_avg_buffer(Avg_Buffer * avg_buffer,double element){
     avg_buffer->write_index =(avg_buffer->write_index+ 1)%5;
 }
 
-double take(Buffer* buffer){
-    double price_taken = buffer->data[buffer->read_index];
+void take(Buffer* buffer,double* price, string * product_name){
+    *price = buffer->data[buffer->read_index].price;
+    *product_name = buffer->data[buffer->read_index].product_name;
+    //strncpy(product_name,buffer->data[buffer->read_index].product_name,11);
     
     pid_t pid = getppid(); // Get the process ID
     cout << "Consumer " << pid << " consumed: " 
-            << buffer->data[buffer->read_index] << endl; 
+            <<  buffer->data[buffer->read_index].product_name << " with price: " 
+            << buffer->data[buffer->read_index].price << endl; 
+    
     //just to show in buffer state
-    buffer->data[buffer->read_index] = 0.0;
+    buffer->data[buffer->read_index].price = 0.0;
+    strncpy(buffer->data[buffer->read_index].product_name,"\0",11);
+    
 
     // incrememnt buffer->read_index
     buffer->read_index = (buffer->read_index+1) % buffer->buffer_size;
@@ -235,11 +244,9 @@ double take(Buffer* buffer){
     // Print buffer state
     cout << "Buffer state: ";
     for (int j = 0; j < (int)buffer->buffer_size; ++j) {
-        cout << buffer->data[j] << " ";
+        cout << buffer->data[j].product_name << " " << buffer->data[j].price << " ";
     }
     cout << endl;
-
-    return price_taken;
 }
 
 int main(int argc, char* argv[]) {
@@ -282,12 +289,12 @@ int main(int argc, char* argv[]) {
     vector<double> avgPrices = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
     
-    int product_key = get_Commodity_Key("GOLD"); // for now do gold only
-    printf("PRODUCT_KEY: %d\n",product_key);
-    key_t shm_key = ftok("/tmp", product_key);
+    // int product_key = get_Commodity_Key("GOLD"); // for now do gold only
+    // printf("PRODUCT_KEY: %d\n",product_key);
+    key_t shm_key = ftok("/tmp", 20);
     bool is_new = false;
 
-    key_t SEM_KEY = ftok("/tmp", product_key);
+    key_t SEM_KEY = ftok("/tmp", 22);
     // Create a semaphore set with 3 semaphores
     int semid = create_Or_Get_Semaphore(SEM_KEY,(int)buffer_size); //semget(SEM_KEY, 3, IPC_CREAT | 0666);
     if (semid == -1) {
@@ -295,10 +302,13 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    
     double price_taken;
+    string product_takem;
     // 0 - mutex       - s
     // 1 - empty slots - e
     // 2 - full slots  - n
+
     while(true){
         //semWait(n) - is there a product ready for me?
         printf("is there a product ready for me?\n");
@@ -316,18 +326,16 @@ int main(int argc, char* argv[]) {
         } else {
             cout << "Buffer attached to existing shared memory." << endl;
         }
-        price_taken = take(buffer);
-        printf("PRICE TAKEN: %f\n",price_taken);
-
-
-
-
+        take(buffer,&price_taken,&product_takem);
+        printf("\033[31mPRICE TAKEN: %f\033[0m\n",price_taken);
+        cout << "\033[31mPRoduct TAKEN: \033[0m" << product_takem << endl;
+        
         //semSIgnal(s) - done with critical section
         sem_Signal(semid,0);
 
         //semSignal(e) - product taken so mtspot available
         sem_Signal(semid,1);
-
+        sleep(3);
         //consume
     }
 
