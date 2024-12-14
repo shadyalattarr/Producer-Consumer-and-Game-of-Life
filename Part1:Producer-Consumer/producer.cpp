@@ -55,14 +55,14 @@ void append(Buffer* buffer,double price_gen, char* product_name){
         
 
     // Print buffer state
-    cout << "Buffer state: ";
-    for (int j = 0; j < (int)buffer->buffer_size; ++j) {
-        if(j % 5 == 0){
-            cout << endl;
-        }
-        cout << buffer->data[j].product_name << " " << buffer->data[j].price << " ";
-    }
-    cout << endl;
+    // cout << "Buffer state: ";
+    // for (int j = 0; j < (int)buffer->buffer_size; ++j) {
+    //     if(j % 5 == 0){
+    //         cout << endl;
+    //     }
+    //     cout << buffer->data[j].product_name << " " << buffer->data[j].price << " ";
+    // }
+    // cout << endl;
 }
 
 int create_Or_Get_Semaphore(key_t key, int buffer_size) {
@@ -114,20 +114,21 @@ int create_Or_Get_Semaphore(key_t key, int buffer_size) {
 }
 
 int get_Commodity_Key(const char *commodity) {
-    // Map of commodities to unique keys
+    // Sorted map of commodities to unique keys
     static const map<string, int> commodityKeyMap = {
-        {"GOLD", 1},
-        {"SILVER", 2},
+        {"ALUMINIUM", 0},
+        {"COPPER", 1},
+        {"COTTON", 2},
         {"CRUDEOIL", 3},
-        {"NATURALGAS", 4},
-        {"ALUMINIUM", 5},
-        {"COPPER", 6},
-        {"NICKEL", 7},
-        {"LEAD", 8},
-        {"ZINC", 9},
-        {"MENTHAOIL", 10},
-        {"COTTON", 11}
+        {"GOLD", 4},
+        {"LEAD", 5},
+        {"MENTHAOIL", 6},
+        {"NATURALGAS", 7},
+        {"NICKEL", 8},
+        {"SILVER", 9},
+        {"ZINC", 10}
     };
+
 
     // search for the pair you want
     // com_key is an iterator that pts to pair
@@ -304,7 +305,7 @@ int main(int argc, char *argv[]) {
         print_time();
         double price_gen = distribution(generator);
 
-        printf("\033[31m%s: generating a new value %f\033[0m\n", commodity, price_gen);
+        printf("\033[31m%s: generating a new value %7.2lf\033[0m\n", commodity, price_gen);
         // produce
 
         print_time();
@@ -321,7 +322,7 @@ int main(int argc, char *argv[]) {
 
 
         print_time();
-        printf("\033[31m%s: placing %f on shared buffer\033[0m\n",commodity,price_gen);
+        printf("\033[31m%s: placing %7.2lf on shared buffer\033[0m\n",commodity,price_gen);
         // semWait(s) -> mutex
         //cout<<"fee eiih\n";
         sem_Wait(semid,0);

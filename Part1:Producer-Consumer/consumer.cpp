@@ -16,7 +16,13 @@
 #include <map> // for key
 #include <iomanip> // colors?
 #include <vector>
- 
+#include <sstream>
+
+#define RED "\033[31m"
+#define GREEN "\033[32m"
+#define RESET "\033[0m"
+#define BLUE "\033[34m"
+
 using namespace::std;
 
 //vector in buffer wont work cuz allocate din heap
@@ -36,18 +42,40 @@ struct Avg_Buffer{
     double data[5];
     int write_index;
     int avg_buffer_size;
+    int product_key;
     Avg_Buffer() {
-        for (int i = 0; i < 5; ++i) {
+        avg_buffer_size = 5;
+        for (int i = 0; i < avg_buffer_size; ++i) {
             data[i] = 0;
         }
         write_index = 0;
-        avg_buffer_size = 5;
     }
 };
 
+void get_arrow_color(double price1,double price2, string* arrow,string* color){
+    if(price1 > price2)
+        {
+            *arrow = "↑";
+            *color = GREEN;
+        }
+        else if(price1 < price2){
+            *arrow = "↓";
+            *color = RED;
+        }
+        else{
+            *arrow = "";
+            *color = BLUE;
+        }
+}
+
 void printTable(const vector<string>& commodities, 
                 const vector<double>& prices, 
-                const vector<double>& avgPrices) {
+                const vector<double>& avgPrices,
+                const vector<double>& prev_prices,
+                const vector<double>& prev_avgPrices) {
+    //clear screen
+    printf("\e[1;1H\e[2J");
+    
     // Print table header
     cout << "+-----------------+-------------+-------------+" << endl;
     cout << "|    Currency     |    Price    |  AvgPrice   |" << endl;
@@ -56,13 +84,25 @@ void printTable(const vector<string>& commodities,
     // Print table rows
     for (size_t i = 0; i < commodities.size(); ++i) {
         // Format prices with green/red arrows based on price comparison
-        string priceIndicator = (prices[i] > avgPrices[i]) ? "\033[32m↑\033[0m" : "\033[31m↓\033[0m";
-        string avgPriceIndicator = (prices[i] > avgPrices[i]) ? "\033[32m↑\033[0m" : "\033[31m↓\033[0m";
+        string price_arrow;
+        string price_color;
+        string avg_arrow;
+        string avg_color;
 
-        cout << "| " << setw(15) << commodities[i] << " | "
-                  << setw(9) << fixed << setprecision(2) << prices[i] << priceIndicator << " | "
-                  << setw(9) << fixed << setprecision(2) << avgPrices[i] << avgPriceIndicator << " |"
-                  << endl;
+        get_arrow_color(prices[i],prev_prices[i],&price_arrow,&price_color);
+        get_arrow_color(avgPrices[i],prev_avgPrices[i],&avg_arrow,&avg_color);
+        
+        // Format prices and avgPrices as strings WITHOUT setw for color escapes
+        stringstream price_ss, avg_ss;
+
+        price_ss << fixed << setw(7) << setprecision(2) << prices[i] << price_arrow;
+        
+        avg_ss << fixed << setw(7) << setprecision(2) << avgPrices[i] << avg_arrow;
+
+        // Print row manually aligned with padding
+        cout << "| " << left << setw(15) << commodities[i] << " | "
+             << right  << price_color << setw(11) << price_ss.str() << RESET << "  | "
+             << right << avg_color << setw(11) << avg_ss.str() << RESET << "  |" << endl;
     }
 
     // Print table footer
@@ -118,19 +158,19 @@ int create_Or_Get_Semaphore(key_t key, int buffer_size) {
 }
 
 int get_Commodity_Key(const char *commodity) {
-    // Map of commodities to unique keys
+    // Sorted map of commodities to unique keys
     static const map<string, int> commodityKeyMap = {
-        {"GOLD", 1},
-        {"SILVER", 2},
+        {"ALUMINIUM", 0},
+        {"COPPER", 1},
+        {"COTTON", 2},
         {"CRUDEOIL", 3},
-        {"NATURALGAS", 4},
-        {"ALUMINIUM", 5},
-        {"COPPER", 6},
-        {"NICKEL", 7},
-        {"LEAD", 8},
-        {"ZINC", 9},
-        {"MENTHAOIL", 10},
-        {"COTTON", 11}
+        {"GOLD", 4},
+        {"LEAD", 5},
+        {"MENTHAOIL", 6},
+        {"NATURALGAS", 7},
+        {"NICKEL", 8},
+        {"SILVER", 9},
+        {"ZINC", 10}
     };
 
     // search for the pair you want
@@ -214,7 +254,7 @@ double get_avg_last_5(Avg_Buffer avg_buffer){
 
     }
         
-    printf("sum = %f\n",sum);
+    //printf("sum = %f\n",sum);
     return sum / avg_buffer.avg_buffer_size;
 }
 
@@ -241,15 +281,15 @@ void take(Buffer* buffer,double* price, string * product_name){
     // incrememnt buffer->read_index
     buffer->read_index = (buffer->read_index+1) % buffer->buffer_size;
 
-    // Print buffer state
-    cout << "Buffer state: ";
-    for (int j = 0; j < (int)buffer->buffer_size; ++j) {
-        if(j % 5 == 0){
-            cout << endl;
-        }
-        cout << buffer->data[j].product_name << " " << buffer->data[j].price << " ";
-    }
-    cout << endl;
+    // // Print buffer state
+    // cout << "Buffer state: ";
+    // for (int j = 0; j < (int)buffer->buffer_size; ++j) {
+    //     if(j % 5 == 0){
+    //         cout << endl;
+    //     }
+    //     cout << buffer->data[j].product_name << " " << buffer->data[j].price << " ";
+    // }
+    // cout << endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -260,37 +300,25 @@ int main(int argc, char* argv[]) {
 
     int buffer_size = atoi(argv[1]); // Convert the argument to an integer
 
-    //cout << "Buffer size: " << buffer_size << "\n";
 
-    // Avg_Buffer dabuff;
-    // insert_avg_buffer(&dabuff,1);
-    // insert_avg_buffer(&dabuff,2);
-    // insert_avg_buffer(&dabuff,3);
-    // insert_avg_buffer(&dabuff,4);
-    // insert_avg_buffer(&dabuff,5);
-    // insert_avg_buffer(&dabuff,6);
-
-    // // Print dabuffer state
-    // cout << "daBuffer state: ";
-    // for (int j = 0; j < dabuff.avg_buffer_size; ++j) {
-    //     cout << dabuff.data[j] << " ";
-    // }
-    // cout << endl;
-
-
-    // //printf("(-1) mod 5 = %d\n",(2-3)%5);
-    // printf("write_index= %d\n",dabuff.write_index);
-    // //printf("dabuff.data[(dabuff.write_index-3)%%5] = %f\n",dabuff.data[(dabuff.write_index-8)%5]);
-    // printf("%f\n",get_avg_last_5(dabuff));
-
-
-    
     // Example commodities, prices, and average prices
-    vector<string> commodities = {"GOLD","SILVER","CRUDEOIL","NATURALGAS","ALUMINIUM",
-                                "COPPER","NICKEL","LEAD","ZINC","MENTHAOIL","COTTON"};
+    vector<string> commodities = {"ALUMINIUM", "COPPER", "COTTON", "CRUDEOIL", "GOLD",
+                                    "LEAD", "MENTHAOIL", "NATURALGAS", "NICKEL", "SILVER", "ZINC"};
     vector<double> prices   =  {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     vector<double> avgPrices = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
+    vector<double> prev_prices   =  {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    vector<double> prev_avgPrices = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    
+
+    vector<Avg_Buffer> avg_buffers(commodities.size());
+    // create the avg_buffers
+    for(int i =0;i<(int)commodities.size();i++)
+    {
+        cout << commodities[i] << " buffer" << endl;
+        Avg_Buffer avg_buffer;
+        avg_buffers[i] = avg_buffer;
+    }
     
     // int product_key = get_Commodity_Key("GOLD"); // for now do gold only
     // printf("PRODUCT_KEY: %d\n",product_key);
@@ -311,10 +339,13 @@ int main(int argc, char* argv[]) {
     // 0 - mutex       - s
     // 1 - empty slots - e
     // 2 - full slots  - n
+    int product_key;
+    // first table print
+    printTable(commodities, prices, avgPrices,prev_prices,prev_avgPrices);
 
     while(true){
         //semWait(n) - is there a product ready for me?
-        printf("is there a product ready for me?\n");
+        //printf("is there a product ready for me?\n");
         sem_Wait(semid,2);
 
         //semWait(s)  -- sync to read buffer
@@ -330,8 +361,33 @@ int main(int argc, char* argv[]) {
         //     cout << "Buffer attached to existing shared memory." << endl;
         // }
         take(buffer,&price_taken,&product_takem);
-        printf("\033[31mPRICE TAKEN: %f\033[0m\n",price_taken);
-        cout << "\033[31mPRoduct TAKEN: \033[0m" << product_takem << endl;
+        // printf("\033[31mPRICE TAKEN: %f\033[0m\n",price_taken);
+        // cout << "\033[31mPRoduct TAKEN: \033[0m" << product_takem << endl;
+
+        product_key = get_Commodity_Key(product_takem.c_str());
+        // insert into last 5 buffer
+        insert_avg_buffer(&avg_buffers[product_key],price_taken);
+        // insert into prices and avgprices arrays for table
+        prev_prices[product_key] = prices[product_key];
+        prices[product_key] = price_taken;
+
+        prev_avgPrices[product_key] = avgPrices[product_key];
+        avgPrices[product_key] = get_avg_last_5(avg_buffers[product_key]);
+
+        // Print the table
+        printTable(commodities, prices, avgPrices,prev_prices,prev_avgPrices);
+
+        // Print avg buffer state
+        // cout << "Average Buffer state for " << product_takem << ": ";
+        // for (int j = 0; j < 5; ++j) {
+        //     if(j % 5 == 0){
+        //         cout << endl;
+        //     }
+        //     cout << avg_buffers[product_key].data[j] << " ";
+        // }
+        // cout << endl;
+
+
         shmdt(buffer);
         //semSIgnal(s) - done with critical section
         sem_Signal(semid,0);
@@ -342,10 +398,6 @@ int main(int argc, char* argv[]) {
         //consume
     }
 
-
-
-    // Print the table
-    //printTable(commodities, prices, avgPrices);
 
     return 0;
 }
