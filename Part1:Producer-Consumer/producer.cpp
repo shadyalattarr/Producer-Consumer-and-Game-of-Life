@@ -43,11 +43,11 @@ void append(Buffer* buffer,double price_gen, char* product_name){
     strncpy(buffer->data[buffer->write_index].product_name,product_name,11);
     
     
-    printf("buffersize = %d\n",(int)buffer->buffer_size);
-    pid_t pid = getppid(); // Get the process ID
-    cout << "Producer " << pid << " produced: " 
-            << buffer->data[buffer->write_index].product_name << " of price "
-            << buffer->data[buffer->write_index].price << endl;
+    //printf("buffersize = %d\n",(int)buffer->buffer_size);
+    //pid_t pid = getppid(); // Get the process ID
+    // cout << "Producer " << pid << " produced: " 
+    //         << buffer->data[buffer->write_index].product_name << " of price "
+    //         << buffer->data[buffer->write_index].price << endl;
         
     // assume we sure there is an empty spot
     buffer->write_index = (buffer->write_index + 1) % buffer->buffer_size;
@@ -57,6 +57,9 @@ void append(Buffer* buffer,double price_gen, char* product_name){
     // Print buffer state
     cout << "Buffer state: ";
     for (int j = 0; j < (int)buffer->buffer_size; ++j) {
+        if(j % 5 == 0){
+            cout << endl;
+        }
         cout << buffer->data[j].product_name << " " << buffer->data[j].price << " ";
     }
     cout << endl;
@@ -69,7 +72,7 @@ int create_Or_Get_Semaphore(key_t key, int buffer_size) {
     if (semid == -1) {
         if (errno == ENOENT) {
             // Semaphore does not exist, create it
-            printf("Semaphore does not exist, create it\n");
+            //printf("Semaphore does not exist, create it\n");
             semid = semget(key, 3, IPC_CREAT | 0666);
             if (semid == -1) {
                 perror("semget (create)");
@@ -98,13 +101,13 @@ int create_Or_Get_Semaphore(key_t key, int buffer_size) {
                 exit(EXIT_FAILURE);
             }
 
-            printf("Semaphore created and initialized to %d with ID: %d\n", buffer_size, semid);
+            //printf("Semaphore created and initialized to %d with ID: %d\n", buffer_size, semid);
         } else {
             perror("semget");
             return -1;
         }
     } else {
-        printf("Semaphore already exists with ID: %d\n", semid);
+        //printf("Semaphore already exists with ID: %d\n", semid);
     }
 
     return semid;  // Return the semaphore ID
@@ -231,14 +234,6 @@ int main(int argc, char *argv[]) {
     int wait_interval = atoi(argv[4]);     // Convert fourth argument to int
     int buffer_size = atoi(argv[5]);  // Convert fifth argument to int
 
-    // Output the parsed values
-    // cout << "argv[0] :" << argv[0] << "\n";
-    // cout << "Commodity: " << commodity << "\n";
-    // cout << "Price mean: $ " << price_mean << "\n";
-    // cout << "Price standard deviation: $ " << price_sd << "\n";
-    // cout << "Interval: " << wait_interval << " ms\n";
-    // cout << "Buffer size: " << buffer_size << "\n";
-    
     // ---------------------
     // shared memory creation
     // just creating a unique key
@@ -297,13 +292,13 @@ int main(int argc, char *argv[]) {
     // ------------------------
     // Seed the generator with a unique value
     unsigned seed = chrono::system_clock::now().time_since_epoch().count() + getpid();  // seed is time + pid
-    printf("Seed: %d\n",seed);
-    printf("PID: %d\n",getpid());
+    //printf("Seed: %d\n",seed);
+    //printf("PID: %d\n",getpid());
     
     default_random_engine generator(seed); // to ensure each process generates different numbers -> not default seed
     normal_distribution<double> distribution(price_mean,price_sd);
     // first let's try and produce into terminal instead into a prod log file
-    int com_key;
+    //int com_key;
     while(true)
     {
         print_time();
@@ -318,26 +313,26 @@ int main(int argc, char *argv[]) {
         sem_Wait(semid,1);
         // Attach the shared memory to the process
         Buffer* buffer = create_Or_Attach_Buffer(shm_key,buffer_size,is_new);
-        if (is_new) {
-            cout << "Buffer created and initialized." << endl;
-        } else {
-            cout << "Buffer attached to existing shared memory." << endl;
-        }
+        // if (is_new) {
+        //     cout << "Buffer created and initialized." << endl;
+        // } else {
+        //     cout << "Buffer attached to existing shared memory." << endl;
+        // }
 
 
         print_time();
         printf("\033[31m%s: placing %f on shared buffer\033[0m\n",commodity,price_gen);
         // semWait(s) -> mutex
-        cout<<"fee eiih\n";
+        //cout<<"fee eiih\n";
         sem_Wait(semid,0);
-        cout << "2oli fee eih\n";
+        //cout << "2oli fee eih\n";
 
         // append
-        cout <<"before going com_key" << commodity << "\n";
-        com_key = get_Commodity_Key(commodity);
-        cout << "com_key we clearrrrrr = " << com_key << "\n";
+        //cout <<"before going com_key" << commodity << "\n";
+        //com_key = get_Commodity_Key(commodity);
+        //cout << "com_key we clearrrrrr = " << com_key << "\n";
         append(buffer,price_gen,commodity); // note buffer here is a pointer to buffer
-        cout<<"dount we gget here\n";
+        //cout<<"dount we gget here\n";
         // Detach from shared memory
         shmdt(buffer);
 

@@ -76,7 +76,7 @@ int create_Or_Get_Semaphore(key_t key, int buffer_size) {
     if (semid == -1) {
         if (errno == ENOENT) {
             // Semaphore does not exist, create it
-            printf("Semaphore does not exist, create it\n");
+            //printf("Semaphore does not exist, create it\n");
             semid = semget(key, 3, IPC_CREAT | 0666);
             if (semid == -1) {
                 perror("semget (create)");
@@ -105,13 +105,13 @@ int create_Or_Get_Semaphore(key_t key, int buffer_size) {
                 exit(EXIT_FAILURE);
             }
 
-            printf("Semaphore created and initialized to %d with ID: %d\n", buffer_size, semid);
+            //printf("Semaphore created and initialized to %d with ID: %d\n", buffer_size, semid);
         } else {
             perror("semget");
             return -1;
         }
     } else {
-        printf("Semaphore already exists with ID: %d\n", semid);
+        //printf("Semaphore already exists with ID: %d\n", semid);
     }
 
     return semid;  // Return the semaphore ID
@@ -228,10 +228,10 @@ void take(Buffer* buffer,double* price, string * product_name){
     *product_name = buffer->data[buffer->read_index].product_name;
     //strncpy(product_name,buffer->data[buffer->read_index].product_name,11);
     
-    pid_t pid = getppid(); // Get the process ID
-    cout << "Consumer " << pid << " consumed: " 
-            <<  buffer->data[buffer->read_index].product_name << " with price: " 
-            << buffer->data[buffer->read_index].price << endl; 
+    // pid_t pid = getppid(); // Get the process ID
+    // cout << "Consumer " << pid << " consumed: " 
+    //         <<  buffer->data[buffer->read_index].product_name << " with price: " 
+    //         << buffer->data[buffer->read_index].price << endl; 
     
     //just to show in buffer state
     buffer->data[buffer->read_index].price = 0.0;
@@ -244,6 +244,9 @@ void take(Buffer* buffer,double* price, string * product_name){
     // Print buffer state
     cout << "Buffer state: ";
     for (int j = 0; j < (int)buffer->buffer_size; ++j) {
+        if(j % 5 == 0){
+            cout << endl;
+        }
         cout << buffer->data[j].product_name << " " << buffer->data[j].price << " ";
     }
     cout << endl;
@@ -257,7 +260,7 @@ int main(int argc, char* argv[]) {
 
     int buffer_size = atoi(argv[1]); // Convert the argument to an integer
 
-    cout << "Buffer size: " << buffer_size << "\n";
+    //cout << "Buffer size: " << buffer_size << "\n";
 
     // Avg_Buffer dabuff;
     // insert_avg_buffer(&dabuff,1);
@@ -315,27 +318,27 @@ int main(int argc, char* argv[]) {
         sem_Wait(semid,2);
 
         //semWait(s)  -- sync to read buffer
-        printf("sync to read buffer\n");
+        //printf("sync to read buffer\n");
         sem_Wait(semid,0);
 
         //take()
         // Attach the shared memory to the process
         Buffer* buffer = create_Or_Attach_Buffer(shm_key,buffer_size,is_new);
-        if (is_new) {
-            cout << "Buffer created and initialized." << endl;
-        } else {
-            cout << "Buffer attached to existing shared memory." << endl;
-        }
+        // if (is_new) {
+        //     cout << "Buffer created and initialized." << endl;
+        // } else {
+        //     cout << "Buffer attached to existing shared memory." << endl;
+        // }
         take(buffer,&price_taken,&product_takem);
         printf("\033[31mPRICE TAKEN: %f\033[0m\n",price_taken);
         cout << "\033[31mPRoduct TAKEN: \033[0m" << product_takem << endl;
-        
+        shmdt(buffer);
         //semSIgnal(s) - done with critical section
         sem_Signal(semid,0);
 
         //semSignal(e) - product taken so mtspot available
         sem_Signal(semid,1);
-        sleep(3);
+        sleep(1);
         //consume
     }
 
